@@ -4,7 +4,8 @@ export const tts = async (text: string) => {
     {
       method: "POST",
       body: JSON.stringify({
-        voice: "ms-MY-YasminNeural",
+        //voice: "ms-MY-YasminNeural",
+        voice: "ru-RU-SvetlanaNeural",
         text,
       }),
       headers: {

@@ -32,7 +32,7 @@ const LandingPage: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <Router>
+    <Router basename="/ai-assistant/">
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/voice-chat" element={<VoiceChat />} />
