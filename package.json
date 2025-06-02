@@ -13,6 +13,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@openai/realtime-api-beta": "https://github.com/openai/openai-realtime-api-beta.git",
     "antd": "^5.25.3",
     "live2d-motionsync": "0.0.4",
     "lottie-react": "^2.4.1",
