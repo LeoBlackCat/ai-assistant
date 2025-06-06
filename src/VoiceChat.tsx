@@ -33,7 +33,9 @@ const VoiceChat: React.FC = () => {
   const [textChatVisible, setTextChatVisible] = useState<boolean>(true);
   const [userInput, setUserInput] = useState<string>("");
   const [transcriptionDelta, setTranscriptionDelta] = useState<string>("");
-  const [needToClear, setNeedToClear] = useState<boolean>(false);
+  //const [needToClear, setNeedToClear] = useState<boolean>(false);
+  const needToClearRef = useRef(false);
+
   const motionSync = useRef<MotionSync>();
   const toggleVoice = (): void => setVoiceActive(!voiceActive);
   const toggleTextChat = (): void => setTextChatVisible(!textChatVisible);
@@ -41,7 +43,15 @@ const VoiceChat: React.FC = () => {
   const modelName = "kei_vowels_pro";
 
   const [isConnected, setIsConnected] = useState(false);
-  const [items, setItems] = useState<ItemType[]>([]);
+  const [items, setItems] = useState([
+    {
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: 'Hello!',
+      }],
+    }
+  ]);
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>): void => setUserInput(e.target.value);
@@ -95,7 +105,7 @@ const VoiceChat: React.FC = () => {
     // Set state variables
     setIsConnected(true);
     setRealtimeEvents([]);
-    setItems(client.conversation.getItems());
+    //setItems(client.conversation.getItems());
 
     // Connect to microphone
     await wavRecorder.begin();
@@ -105,13 +115,13 @@ const VoiceChat: React.FC = () => {
 
     // Connect to realtime API
     await client.connect();
-    client.sendUserMessageContent([
-      {
-        type: `input_text`,
-        text: `Hello!`,
-        // text: `For testing purposes, I want you to list ten car brands. Number each item, e.g. "one (or whatever number you are one): the item name".`
-      },
-    ]);
+    // client.sendUserMessageContent([
+    //   {
+    //     type: `input_text`,
+    //     text: `Hello!`,
+    //     // text: `For testing purposes, I want you to list ten car brands. Number each item, e.g. "one (or whatever number you are one): the item name".`
+    //   },
+    // ]);
 
     if (client.getTurnDetectionType() === 'server_vad') {
       await wavRecorder.record((data: { mono: ArrayBuffer; raw: ArrayBuffer }) => client.appendInputAudio(data.mono));
@@ -142,12 +152,7 @@ const VoiceChat: React.FC = () => {
     const wavStreamPlayer = wavStreamPlayerRef.current;
     const client = clientRef.current;
 
-    // Set instructions
-    //client.updateSession({ instructions: instructions });
-    // Set transcription, otherwise we don't get user transcriptions back
-    //client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
-    // Set turn detection to server VAD by default
-    //client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
+    // @ts-expect-error - Using custom model
     client.updateSession({ input_audio_transcription: { model: 'gpt-4o-mini-transcribe' } });
     client.updateSession({ turn_detection: { type: 'server_vad' } });
 
@@ -155,12 +160,10 @@ const VoiceChat: React.FC = () => {
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
       if (realtimeEvent.event?.type === 'conversation.item.input_audio_transcription.delta') {
         const delta = realtimeEvent.event?.delta ?? '';
-        console.log('delta', delta);
         setTranscriptionDelta(prev => {
           // If we need to clear, start fresh with the new delta
-          if (needToClear) {
-            console.log('clearing transcription');
-            setNeedToClear(false);
+          if (needToClearRef.current) {
+            needToClearRef.current = false;
             return delta;
           }
           // Otherwise append to existing text
@@ -168,8 +171,21 @@ const VoiceChat: React.FC = () => {
         });
       } else if (realtimeEvent.event?.type === 'conversation.item.input_audio_transcription.completed') {
         console.log('completed', realtimeEvent.event?.transcript ?? '');
-        setNeedToClear(true);
-        console.log('setting need to clear to true');
+        if (realtimeEvent.event?.transcript) {
+          setTranscriptionDelta(realtimeEvent.event?.transcript);
+          // client.sendUserMessageContent([{
+          //   type: 'input_text',
+          //   text: realtimeEvent.event.transcript
+          // }]);
+          setItems(prev => [...prev, {
+            role: 'user',
+            content: [{
+              type: 'input_text',
+              text: realtimeEvent.event.transcript
+            }]
+          }]);
+        }
+        needToClearRef.current = true;
       }
     });
     client.on('error', (event: any) => console.error(event));
@@ -180,7 +196,7 @@ const VoiceChat: React.FC = () => {
       //console.log('conversation.updated', item, delta);
     });
 
-    setItems(client.conversation.getItems());
+    //setItems(client.conversation.getItems());
 
     return () => {
       // cleanup; resets to defaults
@@ -271,12 +287,26 @@ const VoiceChat: React.FC = () => {
         <div className="bg-white rounded-2xl shadow p-4 w-full max-w-sm flex flex-col">
           {/* Chat messages */}
           <div className="flex flex-col gap-2 overflow-y-auto mb-2">
-            <div className="chat chat-start">
-              <div className="chat-bubble bg-blue-100 text-blue-800">Hi! How can I help you today?</div>
-            </div>
-            <div className="chat chat-end">
-              <div className="chat-bubble bg-green-100 text-green-800">Tell me about the Spanish Civil War.</div>
-            </div>
+            {items.map((item, index) => {
+              //if (item.type !== 'message') return null;
+              const content = item.content?.[0];
+              if (!content) return null;
+              
+              let messageText = '';
+              if (content.type === 'text' || content.type === 'input_text') {
+                messageText = content.text;
+              } else if (content.type === 'audio' || content.type === 'input_audio') {
+                messageText = content.transcript || '';
+              }
+
+              return (
+                <div key={index} className={`chat ${item.role === 'assistant' ? 'chat-start' : 'chat-end'}`}>
+                  <div className={`chat-bubble ${item.role === 'assistant' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                    {messageText}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* Input */}
