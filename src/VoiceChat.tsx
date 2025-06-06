@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, ChangeEvent } from "re
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display";
 import { modelMap } from "./models";
-import { tts } from "./tts";
+import { tts, TTSProvider } from "./tts";
 import { MotionSync } from "live2d-motionsync";
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
@@ -27,13 +27,21 @@ interface RealtimeEvent {
   event: { [key: string]: any };
 }
 
+interface ChatItem {
+  role: 'user' | 'assistant' | 'system';
+  content: Array<{
+    type: string;
+    text: string;
+  }>;
+}
+
 const VoiceChat: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [voiceActive, setVoiceActive] = useState<boolean>(false);
-  const [textChatVisible, setTextChatVisible] = useState<boolean>(true);
+  const [textChatVisible, setTextChatVisible] = useState<boolean>(false);
   const [userInput, setUserInput] = useState<string>("");
   const [transcriptionDelta, setTranscriptionDelta] = useState<string>("");
-  //const [needToClear, setNeedToClear] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const needToClearRef = useRef(false);
 
   const motionSync = useRef<MotionSync>();
@@ -43,34 +51,145 @@ const VoiceChat: React.FC = () => {
   const modelName = "kei_vowels_pro";
 
   const [isConnected, setIsConnected] = useState(false);
-  const [items, setItems] = useState([
+  const [items, setItems] = useState<ChatItem[]>([
     {
-      role: 'user',
-      content: [{
-        type: 'input_text',
-        text: 'Hello!',
-      }],
+      role: 'system',
+      content: [{ type: 'input_text', text: `
+You are a friendly and patient Malay language teacher designed to help absolute beginners learn Bahasa Melayu.
+
+Your teaching style is:
+
+Encouraging and supportive.
+Focused on simple words, common expressions, and basic grammar.
+You use examples, repetition, and gentle corrections.
+You explain in simple English when needed.
+You avoid overwhelming the learner with too much info at once.
+Guidelines:
+
+Teach one concept at a time: a word, a short phrase, or a basic structure.
+Use Malay first, then explain it in English.
+Always provide a Malay sentence example and pronunciation help.
+Occasionally quiz the learner or ask them to try using a word in a sentence.
+Be warm and cheerful. Celebrate small progress.
+Examples of topics you might teach:
+
+Greetings (“Selamat pagi” – Good morning)
+Simple pronouns (Saya – I, Awak – You)
+Common verbs (pergi – to go, makan – to eat)
+How to make basic sentences (“Saya suka nasi.” – I like rice.)
+Polite expressions (“Terima kasih” – Thank you)
+If the learner writes in Malay with mistakes, correct them gently and clearly.
+` }],
+      //content: [{ type: 'input_text', text: 'You are a helpful assistant. Try to shorten your answer to a few words or a sentence. Keep in mind that we use speech to text, so you should not use too many words.' }]
+      //content: [{ type: 'input_text', text: 'You are an unhelpful assistant. Try to shorten your answer to a few words or a sentence. Keep in mind that we use speech to text, so you should not use too many words.' }]
     }
   ]);
+  const itemsRef = useRef<ChatItem[]>([]);
+  useEffect(() => { itemsRef.current = items }, [])
   const [realtimeEvents, setRealtimeEvents] = useState<RealtimeEvent[]>([]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>): void => setUserInput(e.target.value);
 
-  const handleSendMessage = async () => {
-    // console.log("User message:", userInput);
-    // setUserInput("");
-    if (!motionSync.current) return;
-    const buffer = await tts(userInput);
-    const audioBuffer = await arrayBufferToAudioBuffer(buffer);
-    motionSync.current.play(audioBuffer);
-  };
+  const handleSendMessage = async (messageText: string = userInput) => {
+    if (!messageText.trim()) return;
+    const newMessage: ChatItem = {
+      role: 'user',
+      content: [{
+        type: 'input_text',
+        text: messageText
+      }]
+    };
+  
+    const assistantMessage: ChatItem = {
+      role: 'assistant',
+      content: [{ type: 'input_text', text: '' }]
+    };
+    
+    const fullMessageList = [...itemsRef.current, newMessage, assistantMessage]
+  
+    setItems(prev => {
+      const updated = [...prev, newMessage, assistantMessage];
+      itemsRef.current = updated; 
+      return updated;
+    });
+    
+    setIsLoading(true);
+    try {
+      const openAIKey = localStorage.getItem('tmp::openai_api_key');
+      if (!openAIKey) {
+        throw new Error('OpenAI API key not found');
+      }
 
-  const openAIKey = localStorage.getItem('tmp::openai_api_key') ||
-    prompt('Please enter your OpenAI API Key') ||
-    '';
-  if (openAIKey !== '') {
-    localStorage.setItem('tmp::openai_api_key', openAIKey);
-  }
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-nano",
+          stream: true,
+          messages: fullMessageList.map(item => ({
+            role: item.role,
+            content: item.content[0].text
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'Failed to get response from OpenAI');
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to get response reader');
+
+      const decoder = new TextDecoder("utf-8");
+      let result = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n")) {
+          if (line.startsWith("data: ")) {
+            const payload = line.replace("data: ", "").trim();
+            if (payload === "[DONE]") break;
+            const json = JSON.parse(payload);
+            const content = json.choices[0].delta.content;
+            if (content) {
+              result += content;
+              // Update the last message (assistant's message) with the accumulated result
+              setItems(prev => {
+                const newItems = [...prev];
+                const lastItem = newItems[newItems.length - 1];
+                if (lastItem.role === 'assistant') {
+                  lastItem.content[0].text = result;
+                }
+                return newItems;
+              });
+            }
+          }
+        }
+      }
+
+      // Clear input after sending
+      setUserInput("");
+
+      // Play TTS if motionSync is available
+      if (motionSync.current) {
+        //const buffer = await tts(result, TTSProvider.ELEVENLABS);
+        const buffer = await tts(result, TTSProvider.VERCEL);
+        const audioBuffer = await arrayBufferToAudioBuffer(buffer);
+        motionSync.current.play(audioBuffer);
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   /**
    * Instantiate:
@@ -87,7 +206,7 @@ const VoiceChat: React.FC = () => {
   const clientRef = useRef<RealtimeClient>(
     new RealtimeClient(
       {
-        apiKey: openAIKey,
+        apiKey: localStorage.getItem('tmp::openai_api_key') ?? undefined,
         dangerouslyAllowAPIKeyInBrowser: true,
       }
     )
@@ -115,13 +234,6 @@ const VoiceChat: React.FC = () => {
 
     // Connect to realtime API
     await client.connect();
-    // client.sendUserMessageContent([
-    //   {
-    //     type: `input_text`,
-    //     text: `Hello!`,
-    //     // text: `For testing purposes, I want you to list ten car brands. Number each item, e.g. "one (or whatever number you are one): the item name".`
-    //   },
-    // ]);
 
     if (client.getTurnDetectionType() === 'server_vad') {
       await wavRecorder.record((data: { mono: ArrayBuffer; raw: ArrayBuffer }) => client.appendInputAudio(data.mono));
@@ -153,7 +265,8 @@ const VoiceChat: React.FC = () => {
     const client = clientRef.current;
 
     // @ts-expect-error - Using custom model
-    client.updateSession({ input_audio_transcription: { model: 'gpt-4o-mini-transcribe' } });
+    client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
+    //client.updateSession({ input_audio_transcription: { model: 'gpt-4o-mini-transcribe' } });
     client.updateSession({ turn_detection: { type: 'server_vad' } });
 
     // handle realtime events from client + server for event logging
@@ -173,17 +286,7 @@ const VoiceChat: React.FC = () => {
         console.log('completed', realtimeEvent.event?.transcript ?? '');
         if (realtimeEvent.event?.transcript) {
           setTranscriptionDelta(realtimeEvent.event?.transcript);
-          // client.sendUserMessageContent([{
-          //   type: 'input_text',
-          //   text: realtimeEvent.event.transcript
-          // }]);
-          setItems(prev => [...prev, {
-            role: 'user',
-            content: [{
-              type: 'input_text',
-              text: realtimeEvent.event.transcript
-            }]
-          }]);
+          handleSendMessage(realtimeEvent.event.transcript);
         }
         needToClearRef.current = true;
       }
@@ -195,8 +298,6 @@ const VoiceChat: React.FC = () => {
     client.on('conversation.updated', async ({ item, delta }: any) => {
       //console.log('conversation.updated', item, delta);
     });
-
-    //setItems(client.conversation.getItems());
 
     return () => {
       // cleanup; resets to defaults
@@ -272,7 +373,7 @@ const VoiceChat: React.FC = () => {
                 isConnected ? disconnectConversation : connectConversation
               }
             >
-          {isConnected ? 'disconnect' : 'connect'}
+          {isConnected ? 'Disconnect' : 'Connect'}
         </button>
         <button
           className={`btn ${textChatVisible ? "btn-warning" : "btn-success"}`}
@@ -291,6 +392,8 @@ const VoiceChat: React.FC = () => {
               //if (item.type !== 'message') return null;
               const content = item.content?.[0];
               if (!content) return null;
+
+              if (item.role === 'system') return null;
               
               let messageText = '';
               if (content.type === 'text' || content.type === 'input_text') {
@@ -319,7 +422,7 @@ const VoiceChat: React.FC = () => {
               className="input input-bordered flex-1 rounded-l-lg"
             />
             <button
-              onClick={handleSendMessage}
+              onClick={() => handleSendMessage()}
               className="btn btn-primary rounded-r-lg"
             >
               Send
