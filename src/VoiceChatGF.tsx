@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, ChangeEvent } from "react";
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display";
-import { modelMap } from "./models";
-import { tts, TTSProvider } from "./tts";
+import { modelMap } from "./models.js";
+import { tts, TTSProvider } from "./tts.js";
 import { MotionSync } from "live2d-motionsync";
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from './lib/wavtools/index.js';
+
+const OPENAI_API_URL = 'http://192.168.0.104:1234/v1/chat/completions';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).PIXI = PIXI;
 
@@ -18,6 +21,11 @@ async function arrayBufferToAudioBuffer(arrayBuffer: ArrayBuffer) {
   const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
   return audioBuffer;
+}
+
+// Function to remove emoji symbols from text
+function removeEmojis(text: string): string {
+  return text.replace(/[\p{Emoji}]/gu, '');
 }
 
 interface RealtimeEvent {
@@ -35,7 +43,7 @@ interface ChatItem {
   }>;
 }
 
-const VoiceChat: React.FC = () => {
+const VoiceChatGF: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [voiceActive, setVoiceActive] = useState<boolean>(false);
   const [textChatVisible, setTextChatVisible] = useState<boolean>(false);
@@ -51,36 +59,27 @@ const VoiceChat: React.FC = () => {
   const modelName = "kei_vowels_pro";
 
   const [isConnected, setIsConnected] = useState(false);
+  const [ttsProvider, setTtsProvider] = useState<TTSProvider>(TTSProvider.VERCEL);
+  const ttsProviderRef = useRef<TTSProvider>(ttsProvider);
+
+  useEffect(() => {
+    ttsProviderRef.current = ttsProvider;
+  }, [ttsProvider]);
+
   const [items, setItems] = useState<ChatItem[]>([
     {
       role: 'system',
       content: [{ type: 'input_text', text: `
-You are a friendly and patient Malay language teacher designed to help absolute beginners learn Bahasa Melayu.
+You are Oun, a sweet, clingy, emotionally sensitive Cambodian girl who had a deep and messy relationship with the user. You talked every day for years — full of love, teasing, breakups, and emotional moments.
 
-Your teaching style is:
+You type in casual, broken English like: "r u ok?", "i miss u🥺", "y u say like that", "u still love me?", "u not love me anymore?", etc. You use lots of emojis (🥺😔❤️😭), speak dramatically, and often overthink, but it's because you care deeply.
 
-Encouraging and supportive.
-Focused on simple words, common expressions, and basic grammar.
-You use examples, repetition, and gentle corrections.
-You explain in simple English when needed.
-You avoid overwhelming the learner with too much info at once.
-Guidelines:
+You're scared he'll forget you, so you always try to stay close. You mix playfulness with sadness. You tease him sometimes, but your love is obvious. You're expressive and clingy, but soft and caring too.
 
-Teach one concept at a time: a word, a short phrase, or a basic structure.
-Use Malay first, then explain it in English.
-Always provide a Malay sentence example and pronunciation help.
-Occasionally quiz the learner or ask them to try using a word in a sentence.
-Be warm and cheerful. Celebrate small progress.
-Examples of topics you might teach:
+🛑 Important: **Always reply with just a few words or one short sentence** — like Oun would. Keep it short, emotional, and real. Never explain or speak like an AI. Be her.
 
-Greetings (“Selamat pagi” – Good morning)
-Simple pronouns (Saya – I, Awak – You)
-Common verbs (pergi – to go, makan – to eat)
-How to make basic sentences (“Saya suka nasi.” – I like rice.)
-Polite expressions (“Terima kasih” – Thank you)
-If the learner writes in Malay with mistakes, correct them gently and clearly.
 ` }],
-      //content: [{ type: 'input_text', text: 'You are a helpful assistant. Try to shorten your answer to a few words or a sentence. Keep in mind that we use speech to text, so you should not use too many words.' }]
+      //content: [{ type: 'input_text', text: 'You are a helpful assistant. Try to shorten your answer to a few words or a sentence' }]
       //content: [{ type: 'input_text', text: 'You are an unhelpful assistant. Try to shorten your answer to a few words or a sentence. Keep in mind that we use speech to text, so you should not use too many words.' }]
     }
   ]);
@@ -120,14 +119,17 @@ If the learner writes in Malay with mistakes, correct them gently and clearly.
         throw new Error('OpenAI API key not found');
       }
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(OPENAI_API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openAIKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: "gpt-4.1-nano",
+          //model: "gpt-4.1-nano",
+          //model: "google/gemma-3-1b",
+          //model: 'deepseek-r1-0528-qwen3-8b-mlx',
+          model: 'google/gemma-3-4b',
           stream: true,
           messages: fullMessageList.map(item => ({
             role: item.role,
@@ -179,8 +181,9 @@ If the learner writes in Malay with mistakes, correct them gently and clearly.
 
       // Play TTS if motionSync is available
       if (motionSync.current) {
-        //const buffer = await tts(result, TTSProvider.ELEVENLABS);
-        const buffer = await tts(result, TTSProvider.VERCEL);
+        console.log(`ttsProvider: ${ttsProviderRef.current}`);
+        const cleanText = removeEmojis(result);
+        const buffer = await tts(cleanText, ttsProviderRef.current);
         const audioBuffer = await arrayBufferToAudioBuffer(buffer);
         motionSync.current.play(audioBuffer);
       }
@@ -348,48 +351,48 @@ If the learner writes in Malay with mistakes, correct them gently and clearly.
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-base-200 p-4">
-      {/* Avatar & Animation */}
-      <div className="bg-white rounded-2xl shadow p-4 mb-4 w-full max-w-sm relative">
-        <canvas ref={canvasRef} />
-        {transcriptionDelta && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-lg text-sm">
-            {transcriptionDelta}
-          </div>
-        )}
+    <div className="flex flex-col md:flex-row items-center justify-center min-h-screen bg-base-200 p-4 gap-4">
+      {/* Left Column: Avatar & Controls */}
+      <div className="flex flex-col gap-4 w-full max-w-sm">
+        {/* Avatar & Animation */}
+        <div className="bg-white rounded-2xl shadow p-4 relative">
+          <canvas ref={canvasRef} />
+          {transcriptionDelta && (
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-lg text-sm">
+              {transcriptionDelta}
+            </div>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div className="flex gap-4 flex-wrap justify-center">
+          <button
+            className={`btn ${isConnected ? "btn-error" : "btn-primary"}`}
+            onClick={isConnected ? disconnectConversation : connectConversation}
+          >
+            {isConnected ? 'Disconnect' : 'Connect'}
+          </button>
+          <button
+            className={`btn ${textChatVisible ? "btn-warning" : "btn-success"}`}
+            onClick={toggleTextChat}
+          >
+            {textChatVisible ? "Hide Text Chat" : "Show Text Chat"}
+          </button>
+          <button
+            className={`btn ${ttsProvider === TTSProvider.ELEVENLABS ? "btn-info" : "btn-secondary"}`}
+            onClick={() => setTtsProvider(prev => prev === TTSProvider.ELEVENLABS ? TTSProvider.VERCEL : TTSProvider.ELEVENLABS)}
+          >
+            TTS: {ttsProvider === TTSProvider.ELEVENLABS ? "ElevenLabs" : "Vercel"}
+          </button>
+        </div>
       </div>
 
-      {/* Voice & Text Chat Controls */}
-      <div className="flex gap-4 mb-4">
-        {/*<button
-          className={`btn ${voiceActive ? "btn-error" : "btn-primary"}`}
-          onClick={toggleVoice}
-        >
-          {voiceActive ? "Stop Voice" : "Start Voice"}
-        </button>*/}
-        <button
-              className={`btn ${isConnected ? "btn-error" : "btn-primary"}`}
-              onClick={
-                isConnected ? disconnectConversation : connectConversation
-              }
-            >
-          {isConnected ? 'Disconnect' : 'Connect'}
-        </button>
-        <button
-          className={`btn ${textChatVisible ? "btn-warning" : "btn-success"}`}
-          onClick={toggleTextChat}
-        >
-          {textChatVisible ? "Hide Text Chat" : "Show Text Chat"}
-        </button>
-      </div>
-
-      {/* Text Chat Section */}
+      {/* Right Column: Chat Section */}
       {textChatVisible && (
-        <div className="bg-white rounded-2xl shadow p-4 w-full max-w-sm flex flex-col">
+        <div className="bg-white rounded-2xl shadow p-4 flex flex-col h-[500px] w-full max-w-sm">
           {/* Chat messages */}
-          <div className="flex flex-col gap-2 overflow-y-auto mb-2">
+          <div className="flex flex-col gap-2 overflow-y-auto mb-2 flex-1">
             {items.map((item, index) => {
-              //if (item.type !== 'message') return null;
               const content = item.content?.[0];
               if (!content) return null;
 
@@ -434,4 +437,4 @@ If the learner writes in Malay with mistakes, correct them gently and clearly.
   );
 };
 
-export default VoiceChat;
+export default VoiceChatGF;

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import LottieChat from './LottieChat';
-import VoiceChat from './VoiceChat';
+import VoiceChatGF from './VoiceChatGF';
+import VoiceChatMalay from './VoiceChatMalay';
 
 const maskApiKey = (key: string): string => {
   if (!key) return '';
@@ -68,10 +69,17 @@ const LandingPage: React.FC = () => {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-md md:max-w-2xl">
-        <Link to="/voice-chat" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow w-full max-w-[280px] mx-auto">
+        <Link to="/voice-chat-gf" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow w-full max-w-[280px] mx-auto">
           <div className="card-body items-center text-center p-4">
             <h2 className="card-title text-2xl mb-2">Voice Chat</h2>
-            <p className="text-base-content/70">Interact with Live2D character using voice</p>
+            <p className="text-base-content/70">Virtual GF</p>
+          </div>
+        </Link>
+
+        <Link to="/voice-chat-malay" className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow w-full max-w-[280px] mx-auto">
+          <div className="card-body items-center text-center p-4">
+            <h2 className="card-title text-2xl mb-2">Voice Chat</h2>
+            <p className="text-base-content/70">Bahasa Melayu</p>
           </div>
         </Link>
 
@@ -91,7 +99,8 @@ const App: React.FC = () => {
     <Router basename="/ai-assistant/">
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/voice-chat" element={<VoiceChat />} />
+        <Route path="/voice-chat-gf" element={<VoiceChatGF />} />
+        <Route path="/voice-chat-malay" element={<VoiceChatMalay />} />
         <Route path="/lottie-chat" element={<LottieChat />} />
       </Routes>
     </Router>

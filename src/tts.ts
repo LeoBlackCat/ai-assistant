@@ -36,9 +36,9 @@ async function speakWithVercel(text: string): Promise<ArrayBuffer> {
     {
       method: "POST",
       body: JSON.stringify({
-        //voice: "ms-MY-YasminNeural",
+        voice: "ms-MY-YasminNeural",
         //voice: "ru-RU-SvetlanaNeural",
-        voice: "en-US-AvaMultilingualNeural",
+        //voice: "en-US-AvaMultilingualNeural",
         text,
       }),
       headers: {
