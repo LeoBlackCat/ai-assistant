@@ -7,8 +7,7 @@ import { MotionSync } from "live2d-motionsync";
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from './lib/wavtools/index.js';
-
-const OPENAI_API_URL = 'http://192.168.0.104:1234/v1/chat/completions';
+import { API_URL, OPENAI_MODEL } from './config';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).PIXI = PIXI;
@@ -119,7 +118,7 @@ You're scared he'll forget you, so you always try to stay close. You mix playful
         throw new Error('OpenAI API key not found');
       }
 
-      const response = await fetch(OPENAI_API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openAIKey}`,
@@ -129,7 +128,7 @@ You're scared he'll forget you, so you always try to stay close. You mix playful
           //model: "gpt-4.1-nano",
           //model: "google/gemma-3-1b",
           //model: 'deepseek-r1-0528-qwen3-8b-mlx',
-          model: 'google/gemma-3-4b',
+          model: OPENAI_MODEL,
           stream: true,
           messages: fullMessageList.map(item => ({
             role: item.role,
