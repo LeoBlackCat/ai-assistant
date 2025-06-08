@@ -7,7 +7,7 @@ import { MotionSync } from "live2d-motionsync";
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from './lib/wavtools/index.js';
-import { API_URL, OPENAI_MODEL } from './config';
+import { getApiUrl, getModel } from './config';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).PIXI = PIXI;
@@ -58,12 +58,38 @@ const VoiceChatGF: React.FC = () => {
   const modelName = "kei_vowels_pro";
 
   const [isConnected, setIsConnected] = useState(false);
-  const [ttsProvider, setTtsProvider] = useState<TTSProvider>(TTSProvider.VERCEL);
-  const ttsProviderRef = useRef<TTSProvider>(ttsProvider);
+  
+  // Load settings from localStorage with defaults
+  const [useLocalService, setUseLocalService] = useState<boolean>(() => {
+    const saved = localStorage.getItem('useLocalService');
+    return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [ttsProvider, setTtsProvider] = useState<TTSProvider>(() => {
+    const saved = localStorage.getItem('ttsProvider');
+    return saved ? JSON.parse(saved) : TTSProvider.VERCEL;
+  });
+  
+  const [recognitionMode, setRecognitionMode] = useState<'browser' | 'realtime'>(() => {
+    const saved = localStorage.getItem('recognitionMode');
+    return saved ? JSON.parse(saved) : 'browser';
+  });
+
+  // Save settings to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('useLocalService', JSON.stringify(useLocalService));
+  }, [useLocalService]);
 
   useEffect(() => {
-    ttsProviderRef.current = ttsProvider;
+    localStorage.setItem('ttsProvider', JSON.stringify(ttsProvider));
   }, [ttsProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('recognitionMode', JSON.stringify(recognitionMode));
+  }, [recognitionMode]);
+
+  const ttsProviderRef = useRef<TTSProvider>(ttsProvider);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const [items, setItems] = useState<ChatItem[]>([
     {
@@ -118,17 +144,14 @@ You're scared he'll forget you, so you always try to stay close. You mix playful
         throw new Error('OpenAI API key not found');
       }
 
-      const response = await fetch(API_URL, {
+      const response = await fetch(getApiUrl(useLocalService), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openAIKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          //model: "gpt-4.1-nano",
-          //model: "google/gemma-3-1b",
-          //model: 'deepseek-r1-0528-qwen3-8b-mlx',
-          model: OPENAI_MODEL,
+          model: getModel(useLocalService),
           stream: true,
           messages: fullMessageList.map(item => ({
             role: item.role,
@@ -353,6 +376,36 @@ You're scared he'll forget you, so you always try to stay close. You mix playful
     <div className="flex flex-col md:flex-row items-center justify-center min-h-screen bg-base-200 p-4 gap-4">
       {/* Left Column: Avatar & Controls */}
       <div className="flex flex-col gap-4 w-full max-w-sm">
+        {/* Service Type Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={useLocalService ? 'local' : 'openai'}
+          onChange={(e) => setUseLocalService(e.target.value === 'local')}
+        >
+          <option value="local">Service: Local (192.168.0.104, google/gemma-3-4b)</option>
+          <option value="openai">Service: OpenAI ($$$, gpt-4.1-nano)</option>
+        </select>
+
+        {/* Recognition Mode Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={recognitionMode}
+          onChange={(e) => setRecognitionMode(e.target.value as 'browser' | 'realtime')}
+        >
+          <option value="realtime">Recognition: Realtime API (OpenAI, $$$)</option>
+          <option value="browser">Recognition: Browser (free)</option>
+        </select>
+
+        {/* TTS Provider Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={ttsProvider}
+          onChange={(e) => setTtsProvider(e.target.value as TTSProvider)}
+        >
+          <option value={TTSProvider.VERCEL}>TTS: Vercel (free)</option>
+          <option value={TTSProvider.ELEVENLABS}>TTS: ElevenLabs (my account, $$$)</option>
+        </select>
+
         {/* Avatar & Animation */}
         <div className="bg-white rounded-2xl shadow p-4 relative">
           <canvas ref={canvasRef} />
@@ -376,12 +429,6 @@ You're scared he'll forget you, so you always try to stay close. You mix playful
             onClick={toggleTextChat}
           >
             {textChatVisible ? "Hide Text Chat" : "Show Text Chat"}
-          </button>
-          <button
-            className={`btn ${ttsProvider === TTSProvider.ELEVENLABS ? "btn-info" : "btn-secondary"}`}
-            onClick={() => setTtsProvider(prev => prev === TTSProvider.ELEVENLABS ? TTSProvider.VERCEL : TTSProvider.ELEVENLABS)}
-          >
-            TTS: {ttsProvider === TTSProvider.ELEVENLABS ? "ElevenLabs" : "Vercel"}
           </button>
         </div>
       </div>

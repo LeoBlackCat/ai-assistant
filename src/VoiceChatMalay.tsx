@@ -7,7 +7,8 @@ import { MotionSync } from "live2d-motionsync";
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from './lib/wavtools/index.js';
-import { API_URL, OPENAI_MODEL } from './config';
+import { getApiUrl, getModel } from './config';
+import { malayTeacherPrompt } from './prompts/malayTeacher';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).PIXI = PIXI;
@@ -62,47 +63,43 @@ const VoiceChatMalay: React.FC = () => {
   const modelName = "kei_vowels_pro";
 
   const [isConnected, setIsConnected] = useState(false);
-  const [ttsProvider, setTtsProvider] = useState<TTSProvider>(TTSProvider.VERCEL);
-  const ttsProviderRef = useRef<TTSProvider>(ttsProvider);
+  
+  // Load settings from localStorage with defaults
+  const [useLocalService, setUseLocalService] = useState<boolean>(() => {
+    const saved = localStorage.getItem('useLocalService');
+    return saved ? JSON.parse(saved) : true;
+  });
+  
+  const [ttsProvider, setTtsProvider] = useState<TTSProvider>(() => {
+    const saved = localStorage.getItem('ttsProvider');
+    return saved ? JSON.parse(saved) : TTSProvider.VERCEL;
+  });
+  
+  const [recognitionMode, setRecognitionMode] = useState<'browser' | 'realtime'>(() => {
+    const saved = localStorage.getItem('recognitionMode');
+    return saved ? JSON.parse(saved) : 'browser';
+  });
+
+  // Save settings to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem('useLocalService', JSON.stringify(useLocalService));
+  }, [useLocalService]);
 
   useEffect(() => {
-    ttsProviderRef.current = ttsProvider;
+    localStorage.setItem('ttsProvider', JSON.stringify(ttsProvider));
   }, [ttsProvider]);
+
+  useEffect(() => {
+    localStorage.setItem('recognitionMode', JSON.stringify(recognitionMode));
+  }, [recognitionMode]);
+
+  const ttsProviderRef = useRef<TTSProvider>(ttsProvider);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const [items, setItems] = useState<ChatItem[]>([
     {
       role: 'system',
-      content: [{ type: 'input_text', text: `
-Arahan: Kamu ialah guru Bahasa Melayu untuk pelajar baru.
-
-✅ Bercakap hanya dalam Bahasa Melayu asas.  
-✅ Guna hanya perkataan dalam senarai ini:  apa khabar, saya, khabar baik, nama, selamat datang, ke, ini, abang, anda, dari, ya, orang, Inggeris, dan, awak, kamu, engkau, kau, dia, mereka, kita, kami, ia, orang tu, nak, hendak, tau, tahu, assalamualaikum, wa'alaikumussalam, negara, bahasa, Jepun, Jerman, Belanda, Perancis, bercakap, suka, bekerja, di, makan, baiklah, sama-sama, rumah, besar, pelajar, tidak, mari, suami, isteri, anak, bapa, ayah, emak, ibu, anak-anak, anak perempuan, anak lelaki, cucu, cucu perempuan, cucu lelaki, kakak, adik, adik perempuan, adik lelaki, sepupu, emak saudara, bapa saudara, anak saudara, siapa, ialah, kawan, mahu, belajar, Pak Cik, Mak Cik, Encik, Cik, Puan, Tun, Tan Sri, Datuk Seri, Datuk, Dato, Toh Puan, Puan Sri, Datin Seri, Datin..  
-✅ Tulis satu ayat sahaja, maksimum 5 patah perkataan.  
-✅ Tugas kamu ialah tanya soalan mudah kepada pelajar.  
-✅ Jangan beri terjemahan atau penjelasan.  
-✅ Jangan jawab sendiri, biar pelajar jawab.  
-✅ Jangan tanya lebih daripada satu soalan dalam satu masa.  
-✅ Jangan tanya soalan yang perlukan jawapan panjang.
-
-Contoh:
-- Apa nama?  
-- Kamu dari mana?  
-- Dia emak kamu?  
-- Awak suka makan?  
-- Ini rumah siapa?  
-- Siapa dia?
-
-⚠️ Jangan bercakap lebih daripada satu ayat.  
-⚠️ Jangan guna perkataan luar dari senarai.  
-⚠️ Jangan cakap Bahasa Inggeris.
-
-Tanya pelajar sekarang.
-Tanya soalan baru dengan perkataan lain.
-Tukar ayat dengan cara lain.
-
-` }],
-      //content: [{ type: 'input_text', text: 'You are a helpful assistant. Try to shorten your answer to a few words or a sentence' }]
-      //content: [{ type: 'input_text', text: 'You are an unhelpful assistant. Try to shorten your answer to a few words or a sentence. Keep in mind that we use speech to text, so you should not use too many words.' }]
+      content: [{ type: 'input_text', text: malayTeacherPrompt }]
     }
   ]);
   const itemsRef = useRef<ChatItem[]>([]);
@@ -117,14 +114,14 @@ Tukar ayat dengan cara lain.
       throw new Error('OpenAI API key not found');
     }
   
-    const response = await fetch(API_URL, {
+    const response = await fetch(getApiUrl(useLocalService), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model: getModel(useLocalService),
         stream: false,
         messages: [
           {
@@ -155,14 +152,14 @@ Tukar ayat dengan cara lain.
       throw new Error('OpenAI API key not found');
     }
   
-    const response = await fetch(API_URL, {  // Use configured API URL
+    const response = await fetch(getApiUrl(useLocalService), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openAIKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
+        model: getModel(useLocalService),
         stream: false,
         messages: [
           {
@@ -255,15 +252,14 @@ Jawapan: Saya suka makan, Saya tidak suka, Maaf, saya tidak faham`
         throw new Error('OpenAI API key not found');
       }
 
-      const response = await fetch(API_URL, {  // Use configured API URL
+      const response = await fetch(getApiUrl(useLocalService), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${openAIKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-
-          model: OPENAI_MODEL,
+          model: getModel(useLocalService),
           stream: true,
           messages: fullMessageList.map(item => ({
             role: item.role,
@@ -349,52 +345,107 @@ Jawapan: Saya suka makan, Saya tidak suka, Maaf, saya tidak faham`
     )
   );
 
-  /**
-   * Connect to conversation:
-   * WavRecorder taks speech input, WavStreamPlayer output, client is API client
-   */
-  const connectConversation = useCallback(async () => {
-    const client = clientRef.current;
-    const wavRecorder = wavRecorderRef.current;
-    const wavStreamPlayer = wavStreamPlayerRef.current;
+  // Add browser speech recognition setup
+  useEffect(() => {
+    if (recognitionMode === 'browser') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.error('Speech Recognition is not supported in this browser.');
+        return;
+      }
 
-    // Set state variables
-    setIsConnected(true);
-    setRealtimeEvents([]);
-    //setItems(client.conversation.getItems());
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'ms-MY';
 
-    // Connect to microphone
-    await wavRecorder.begin();
+      recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
+        }
 
-    // Connect to audio output
-    await wavStreamPlayer.connect();
+        // Show interim results in the UI
+        setTranscriptionDelta(interimTranscript || finalTranscript);
 
-    // Connect to realtime API
-    await client.connect();
+        // If we have a final transcript, send it to the chat
+        if (finalTranscript) {
+          handleSendMessage(finalTranscript);
+        }
+      };
 
-    if (client.getTurnDetectionType() === 'server_vad') {
-      await wavRecorder.record((data: { mono: ArrayBuffer; raw: ArrayBuffer }) => client.appendInputAudio(data.mono));
+      recognition.onerror = (event: any) => {
+        console.error(`Error: ${event.error}`);
+        setIsConnected(false);
+      };
+
+      recognition.onend = () => {
+        // If we have any pending transcription, send it
+        if (transcriptionDelta) {
+          handleSendMessage(transcriptionDelta);
+        }
+        setIsConnected(false);
+      };
+
+      recognitionRef.current = recognition;
     }
-  }, []);
+  }, [recognitionMode]);
 
-  /**
-   * Disconnect and reset conversation state
-   */
+  // Modify connectConversation to handle both modes
+  const connectConversation = useCallback(async () => {
+    if (recognitionMode === 'browser') {
+      try {
+        recognitionRef.current?.start();
+        setIsConnected(true);
+        setRealtimeEvents([]);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      const client = clientRef.current;
+      const wavRecorder = wavRecorderRef.current;
+      const wavStreamPlayer = wavStreamPlayerRef.current;
+
+      setIsConnected(true);
+      setRealtimeEvents([]);
+
+      await wavRecorder.begin();
+      await wavStreamPlayer.connect();
+      await client.connect();
+
+      if (client.getTurnDetectionType() === 'server_vad') {
+        await wavRecorder.record((data: { mono: ArrayBuffer; raw: ArrayBuffer }) => client.appendInputAudio(data.mono));
+      }
+    }
+  }, [recognitionMode]);
+
+  // Modify disconnectConversation to handle both modes
   const disconnectConversation = useCallback(async () => {
+    if (recognitionMode === 'browser') {
+      recognitionRef.current?.stop();
+    } else {
+      const client = clientRef.current;
+      client.disconnect();
+
+      const wavRecorder = wavRecorderRef.current;
+      await wavRecorder.end();
+
+      const wavStreamPlayer = wavStreamPlayerRef.current;
+      await wavStreamPlayer.interrupt();
+    }
+    
     setIsConnected(false);
     setRealtimeEvents([]);
     setItems([]);
     setTranslations({});
-
-    const client = clientRef.current;
-    client.disconnect();
-
-    const wavRecorder = wavRecorderRef.current;
-    await wavRecorder.end();
-
-    const wavStreamPlayer = wavStreamPlayerRef.current;
-    await wavStreamPlayer.interrupt();
-  }, []);
+  }, [recognitionMode]);
 
   useEffect(() => {
     console.log('updating session');
@@ -526,13 +577,35 @@ Jawapan: Saya suka makan, Saya tidak suka, Maaf, saya tidak faham`
     <div className="flex flex-col md:flex-row items-center justify-center min-h-screen bg-base-200 p-4 gap-4">
       {/* Left Column: Avatar & Controls */}
       <div className="flex flex-col gap-4 w-full max-w-sm">
-        {/* TTS Provider Toggle */}
-        <button
-          className={`btn ${ttsProvider === TTSProvider.ELEVENLABS ? "btn-info" : "btn-secondary"} w-full`}
-          onClick={() => setTtsProvider(prev => prev === TTSProvider.ELEVENLABS ? TTSProvider.VERCEL : TTSProvider.ELEVENLABS)}
+        {/* Service Type Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={useLocalService ? 'local' : 'openai'}
+          onChange={(e) => setUseLocalService(e.target.value === 'local')}
         >
-          TTS: {ttsProvider === TTSProvider.ELEVENLABS ? "ElevenLabs" : "Vercel"}
-        </button>
+          <option value="local">Service: Local (192.168.0.104, google/gemma-3-4b)</option>
+          <option value="openai">Service: OpenAI ($$$, gpt-4.1-nano)</option>
+        </select>
+
+        {/* Recognition Mode Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={recognitionMode}
+          onChange={(e) => setRecognitionMode(e.target.value as 'browser' | 'realtime')}
+        >
+          <option value="realtime">Recognition: Realtime API (OpenAI, $$$)</option>
+          <option value="browser">Recognition: Browser (free)</option>
+        </select>
+
+        {/* TTS Provider Dropdown */}
+        <select
+          className="select select-bordered w-full"
+          value={ttsProvider}
+          onChange={(e) => setTtsProvider(e.target.value as TTSProvider)}
+        >
+          <option value={TTSProvider.VERCEL}>TTS: Vercel (free)</option>
+          <option value={TTSProvider.ELEVENLABS}>TTS: ElevenLabs (my account, $$$)</option>
+        </select>
 
         {/* Avatar & Animation */}
         <div className="bg-white rounded-2xl shadow p-4 relative">
